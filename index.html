@@ -9,44 +9,47 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0a1929">
     <link rel="manifest" href="manifest.json">
-    <title>Midtown Live V17.1</title>
+    <title>Midtown Live V17.2</title>
+
+    <script>
+        window.onerror = function(message, source, lineno, colno, error) {
+            alert("CRASH REPORT:\nError: " + message + "\nLine: " + lineno);
+        };
+    </script>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, where } 
         from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-        // ==========================================
-        // !!! PASTE YOUR FIREBASE KEYS BELOW !!!
-        // ==========================================
+        // ======================================================
+        // PASTE KEYS BETWEEN THE CURLY BRACKETS BELOW
+        // MAKE SURE YOU DO NOT DELETE THE COMMAS OR QUOTES!
+        // ======================================================
         const firebaseConfig = {
-           apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
+             apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
   authDomain: "midtown-time-clock.firebaseapp.com",
   projectId: "midtown-time-clock",
   storageBucket: "midtown-time-clock.firebasestorage.app",
   messagingSenderId: "328451525897",
   appId: "1:328451525897:web:d27b422e08255e964317d8"        };
-        // ==========================================
+        // ======================================================
 
-        // SAFETY CHECK: Did you forget the keys?
+        // Safety Check
         if (firebaseConfig.apiKey.includes("PASTE_YOUR")) {
-            alert("STOP! You forgot to paste your Firebase Keys in the code. The app cannot log in without them.");
+            throw new Error("You forgot to paste the Firebase Keys!");
         }
 
-        try {
-            const app = initializeApp(firebaseConfig);
-            const db = getFirestore(app);
-            
-            window.db = db;
-            window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
-            window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
-            window.doc = doc; window.deleteDoc = deleteDoc; window.where = where;
-            
-            console.log("Firebase Connected");
-            initApp(); 
-        } catch (e) {
-            alert("Error Connecting to Database: " + e.message);
-        }
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        window.db = db;
+        window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
+        window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
+        window.doc = doc; window.deleteDoc = deleteDoc; window.where = where;
+        
+        console.log("Firebase Active");
+        if(window.initApp) window.initApp(); 
     </script>
 
     <style>
@@ -229,165 +232,8 @@
     let clockTimer = null;
     let shiftStartTime = null;
 
-    function initApp() { console.log("Live App Ready"); }
+    window.initApp = function() { console.log("Live App Ready"); }
 
-    async function login() {
-        if (!window.db) { alert("Database not connected. Check API Keys."); return; }
-        const pin = document.getElementById('pin-input').value;
-        try {
-            const q = window.query(window.collection(window.db, "users"), window.where("pin", "==", pin));
-            window.onSnapshot(q, (snapshot) => {
-                if (!snapshot.empty) {
-                    const doc = snapshot.docs[0];
-                    currentUser = { id: doc.id, ...doc.data() };
-                    enterDashboard();
-                } else { document.getElementById('login-msg').innerText = "Invalid PIN"; }
-            });
-        } catch (e) { alert("Login Error: " + e.message); }
-    }
-
-    async function createFirstManager() {
-        const name = document.getElementById('setup-name').value;
-        const pin = document.getElementById('setup-pin').value;
-        if(name && pin) {
-            await window.addDoc(window.collection(window.db, "users"), { name, pin, rate: 0, role: 'manager' });
-            alert("Created! Login now.");
-        }
-    }
-
-    function enterDashboard() {
-        document.getElementById('login-screen').classList.remove('active');
-        document.getElementById('main-dashboard').classList.add('active');
-        document.getElementById('user-display').innerText = currentUser.name;
-        if(currentUser.role === 'manager') {
-            document.getElementById('mgr-tab-btn').style.display = 'block';
-            startManagerListeners();
-        }
-        startDataListeners();
-        renderCalendar();
-    }
-    function logout() { location.reload(); }
-
-    function startDataListeners() {
-        window.onSnapshot(window.query(window.collection(window.db, "shifts"), window.orderBy("date")), (snap) => {
-            shiftsCache = [];
-            snap.forEach(doc => shiftsCache.push({ id: doc.id, ...doc.data() }));
-            renderCalendar(); renderCoverageNeeded();
-        });
-
-        window.onSnapshot(window.query(window.collection(window.db, "timecards"), window.orderBy("date", "desc")), (snap) => {
-            timePunches = [];
-            snap.forEach(doc => timePunches.push({ id: doc.id, ...doc.data() }));
-            renderMyHistory();
-            if(currentUser.role === 'manager') renderAdminTimeCard();
-        });
-
-        window.onSnapshot(window.collection(window.db, "supplies"), (snap) => {
-            const list = document.getElementById('live-supply-list');
-            list.innerHTML = "";
-            snap.forEach(doc => {
-                const s = doc.data();
-                let responseHtml = s.response ? `<div style="color:var(--theme-blue); font-size:0.9em; margin-top:5px;">Mgr: "${s.response}"</div>` : '';
-                let managerAction = "";
-                
-                if(currentUser.role === 'manager') {
-                    managerAction = `
-                    <div style="margin-top:5px; display:flex; gap:5px;">
-                        <input type="text" id="resp-${doc.id}" placeholder="Reply..." style="padding:5px; font-size:0.8em;">
-                        <button class="btn-blue btn-small" onclick="respondSupply('${doc.id}')">Reply</button>
-                        <button class="btn-red btn-small" onclick="del('supplies','${doc.id}')">X</button>
-                    </div>`;
-                }
-
-                list.innerHTML += `
-                <div class="list-item" style="flex-direction:column; align-items:flex-start;">
-                    <div style="width:100%; display:flex; justify-content:space-between;">
-                        <span>${s.item}</span>
-                        <small style="color:#888">${s.date ? s.date.substring(5) : ''}</small>
-                    </div>
-                    ${responseHtml}
-                    ${managerAction}
-                </div>`;
-            });
-        });
-    }
-
-    function startManagerListeners() {
-        window.onSnapshot(window.collection(window.db, "users"), (snap) => {
-            const list = document.getElementById('staff-list');
-            const select = document.getElementById('shift-emp-select');
-            const timeSelect = document.getElementById('mgr-time-user');
-            
-            list.innerHTML = ""; select.innerHTML = ""; timeSelect.innerHTML = "<option value=''>Select Employee...</option>";
-            usersCache = []; 
-            
-            snap.forEach(doc => {
-                const u = doc.data();
-                usersCache.push({ id: doc.id, ...u }); 
-                
-                list.innerHTML += `
-                    <div class="list-item">
-                        <div><b>${u.name}</b> (PIN:${u.pin})<br>$${u.rate}/hr</div>
-                        <button class="btn-blue btn-small" onclick="editPay('${doc.id}', '${u.name}')">Edit Pay</button>
-                    </div>`;
-                select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
-                timeSelect.innerHTML += `<option value="${doc.id}">${u.name}</option>`;
-            });
-        });
-    }
-
-    // --- CALENDAR LOGIC (Restored & Robust) ---
-    function renderCalendar() {
-        const container = document.getElementById('cal-days-container'); 
-        if(!container) return; 
-        container.innerHTML = "";
-        
-        const firstDay = new Date(currentYear, currentMonth, 1);
-        const lastDay = new Date(currentYear, currentMonth + 1, 0);
-        const daysInMonth = lastDay.getDate();
-        const startDayIndex = firstDay.getDay();
-
-        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        document.getElementById('cal-month-year').innerText = `${monthNames[currentMonth]} ${currentYear}`;
-
-        for(let i=0; i<startDayIndex; i++) container.appendChild(document.createElement('div')); 
-
-        for(let d=1; d<=daysInMonth; d++) {
-            const dayDiv = document.createElement('div'); 
-            dayDiv.className = "cal-day"; 
-            dayDiv.innerText = d;
-            
-            const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            
-            if(shiftsCache.some(s => s.date === dateStr)) {
-                dayDiv.classList.add('has-shift');
-            }
-            
-            dayDiv.onclick = () => selectDate(dateStr, dayDiv);
-            if(dateStr === selectedDate) dayDiv.classList.add('selected');
-            container.appendChild(dayDiv);
-        }
-        selectDate(selectedDate, null);
-    }
-
-    function selectDate(dateStr, element) {
-        selectedDate = dateStr;
-        if(element) { document.querySelectorAll('.cal-day').forEach(d => d.classList.remove('selected')); element.classList.add('selected'); }
-        document.getElementById('selected-date-display').innerText = "Schedule: " + dateStr;
-        
-        const list = document.getElementById('day-shifts-list'); list.innerHTML = "";
-        const dayShifts = shiftsCache.filter(s => s.date === dateStr);
-        if(dayShifts.length === 0) list.innerHTML = "<p style='color:#888; text-align:center;'>No shifts.</p>";
-        
-        dayShifts.forEach(s => {
-            const time12 = (t) => { if(!t) return ""; let [h, m] = t.split(':'); let ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12; h = h ? h : 12; return `${h}:${m} ${ampm}`; };
-            
-            let actionBtn = "";
-            if(s.empName === currentUser.name && s.status !== 'open') actionBtn = `<button class="btn-red btn-small" onclick="requestCover('${s.id}')">Request Cover</button>`;
-            else if (s.status === 'open' && s.empName !== currentUser.name) actionBtn = `<button class="btn-blue btn-small" onclick="takeShift('${s.id}')">Take Shift</button>`;
-            else if (s.status === 'open') actionBtn = `<small style="color:var(--theme-red)">Cover Requested</small>`;
-
-            list.innerHTML += `
-                <div class="list-item" style="border-left-color: ${s.status === 'open' ? 'var(--theme-red)' : 'var(--theme-blue)'}">
-                    <div><b>${s.empName}</b><br>${time12(s.start)} - ${time12(s.end)} <span class="role-badge">${s.role}</span></div>
-                    <div>${actionBtn} ${currentUser.role==='manager' ? `<button style="background
+    // --- AUTH ---
+    window.login = async function() {
+        if (!window.db) { alert("Database not connected. Check API
