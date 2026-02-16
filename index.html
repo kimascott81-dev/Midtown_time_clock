@@ -9,7 +9,6 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#1e1e1e">
     <link rel="manifest" href="manifest.json">
-    
     <title>Midtown Live V12</title>
     
     <script type="module">
@@ -19,7 +18,7 @@
 
         // --- PASTE YOUR FIREBASE CONFIG HERE ---
         const firebaseConfig = {
-            apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
+          apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
   authDomain: "midtown-time-clock.firebaseapp.com",
   projectId: "midtown-time-clock",
   storageBucket: "midtown-time-clock.firebasestorage.app",
@@ -30,7 +29,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         
-        // Make DB available globally
+        // Expose Firebase functions to global window
         window.db = db;
         window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
         window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
@@ -49,4 +48,453 @@
         h2, h3 { color: var(--neon-cyan); text-align: center; font-weight: normal; margin: 5px 0 15px 0; }
 
         .card { background: rgba(30,35,40,0.8); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.1); }
-        input, select, textarea { width: 100%; padding: 12px; margin: 5px 0; background:
+        input, select, textarea { width: 100%; padding: 12px; margin: 5px 0; background: rgba(0,0,0,0.5); border: 1px solid #444; color: white; border-radius: 4px; font-size: 16px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; margin-top: 5px; border: none; border-radius: 4px; font-weight: bold; font-size: 16px; cursor: pointer; }
+        
+        .btn-cyan { background: var(--neon-cyan); color: #000; box-shadow: 0 0 10px rgba(0,247,255,0.3); }
+        .btn-red { background: #d32f2f; color: white; }
+        .btn-green { background: var(--neon-green); color: black; }
+        .btn-small { width: auto; padding: 6px 12px; font-size: 0.8em; margin:0; }
+
+        /* CALENDAR GRID */
+        .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 15px; }
+        .cal-day-header { text-align: center; font-size: 0.7em; color: #888; padding-bottom: 5px; }
+        .cal-day { background: rgba(255,255,255,0.05); height: 45px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: pointer; position: relative; font-size: 0.9em; }
+        .cal-day.selected { background: var(--neon-cyan); color: black; font-weight: bold; }
+        .cal-day.has-shift::after { content: ''; position: absolute; bottom: 4px; width: 4px; height: 4px; background: var(--rust-orange); border-radius: 50%; }
+
+        /* LIST ITEMS */
+        .list-item { background: rgba(0,0,0,0.3); padding: 10px; margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; border-left: 3px solid var(--neon-cyan); }
+        .role-badge { font-size: 0.7em; padding: 2px 6px; background: rgba(0,247,255,0.2); color: var(--neon-cyan); border-radius: 3px; border: 1px solid var(--neon-cyan); margin-left: 5px; text-transform: uppercase; }
+
+        .screen { display: none; } .active { display: block; animation: fade 0.4s; }
+        @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+        
+        .nav-tabs { display: flex; gap: 5px; margin-bottom: 15px; border-bottom: 1px solid #333; padding-bottom: 10px; overflow-x: auto;}
+        .nav-btn { flex: 1; background: #222; color: #888; padding: 10px; border-radius: 4px; border: none; white-space: nowrap; }
+        .nav-btn.active-tab { background: rgba(0,247,255,0.1); color: var(--neon-cyan); font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; } td, th { padding: 8px; border-bottom: 1px solid #333; text-align: left; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+
+    <div id="login-screen" class="screen active">
+        <h1>Midtown Live</h1>
+        <div class="card" style="text-align: center; margin-top: 40px;">
+            <p>Enter Passcode</p>
+            <input type="tel" id="pin-input" placeholder="••••" maxlength="4" style="text-align:center; font-size:32px; letter-spacing: 10px; width: 70%; margin: 0 auto;">
+            <button class="btn-cyan" onclick="login()">AUTHENTICATE</button>
+            <p id="login-msg" style="color:red; margin-top:10px;"></p>
+        </div>
+        <div class="card">
+            <h3>First Time Setup?</h3>
+            <p style="font-size:0.8em; color:#aaa;">Create the Manager account.</p>
+            <input type="text" id="setup-name" placeholder="Manager Name">
+            <input type="tel" id="setup-pin" placeholder="Create PIN">
+            <button class="btn-green" onclick="createFirstManager()">Create Manager Account</button>
+        </div>
+    </div>
+
+    <div id="main-dashboard" class="screen">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 15px;">
+            <h2 id="user-display" style="margin:0;">User</h2>
+            <button onclick="logout()" style="width:auto; background:none; color:#888; border:none;">Logout</button>
+        </div>
+        
+        <div class="nav-tabs">
+            <button class="nav-btn active-tab" onclick="showTab('schedule')">Schedule</button>
+            <button class="nav-btn" onclick="showTab('clock')">Clock</button>
+            <button class="nav-btn" onclick="showTab('supplies')">Supplies</button>
+            <button class="nav-btn" id="mgr-tab-btn" style="display:none;" onclick="showTab('manager')">Admin</button>
+        </div>
+
+        <div id="tab-schedule" class="tab-content">
+            <div class="calendar-header">
+                <button class="btn-small" style="background:#333; color:white;" onclick="changeMonth(-1)">&lt;</button>
+                <span id="cal-month-year" style="font-weight:bold; color:var(--neon-cyan);">Month Year</span>
+                <button class="btn-small" style="background:#333; color:white;" onclick="changeMonth(1)">&gt;</button>
+            </div>
+            <div class="calendar-grid">
+                <div class="cal-day-header">S</div><div class="cal-day-header">M</div><div class="cal-day-header">T</div><div class="cal-day-header">W</div><div class="cal-day-header">T</div><div class="cal-day-header">F</div><div class="cal-day-header">S</div>
+                <div id="cal-days-container" style="display:contents;"></div> 
+            </div>
+            <div class="card">
+                <h3 id="selected-date-display" style="font-size:1em; color:#aaa; text-align:left;">Select a date...</h3>
+                <div id="day-shifts-list"></div>
+            </div>
+             <div class="card" style="border-left: 3px solid #d32f2f;">
+                <h3 style="color:#d32f2f; text-align:left;">Coverage Needed</h3>
+                <div id="open-shifts-list"></div>
+            </div>
+        </div>
+
+        <div id="tab-clock" class="tab-content" style="display:none;">
+            <div class="card" style="text-align:center;">
+                <h1 id="clock-display">00:00:00</h1>
+                <p id="clock-status-text" style="color:#888;">Not clocked in</p>
+                <button id="clock-btn" class="btn-cyan" onclick="handleClock()">CLOCK IN</button>
+            </div>
+            <div class="card"><h3>My History</h3><div id="my-history-list"></div></div>
+        </div>
+
+        <div id="tab-supplies" class="tab-content" style="display:none;">
+            <div class="card">
+                <input type="text" id="supply-item" placeholder="Item needed...">
+                <button class="btn-cyan" onclick="addSupply()">Report</button>
+            </div>
+            <div id="live-supply-list"></div>
+        </div>
+
+        <div id="tab-manager" class="tab-content" style="display:none;">
+            <div class="card">
+                <h3>Time Cards & Approval</h3>
+                <select id="mgr-time-user" onchange="renderAdminTimeCard()"><option value="">Select Employee...</option></select>
+                <div id="admin-timecard-view" style="margin-top:10px;"></div>
+            </div>
+
+            <div class="card">
+                <h3>Add Employee & Pay</h3>
+                <input type="text" id="new-emp-name" placeholder="Name">
+                <input type="tel" id="new-emp-pin" placeholder="PIN (4 digits)">
+                <input type="number" id="new-emp-rate" placeholder="Hourly Rate ($)">
+                <button class="btn-green" onclick="addEmployee()">Add Staff</button>
+            </div>
+            
+            <div class="card">
+                <h3>Manage Staff</h3>
+                <div id="staff-list"></div>
+            </div>
+
+            <div class="card">
+                <h3>Publish Shift</h3>
+                <select id="shift-emp-select"></select>
+                <input type="date" id="shift-date">
+                <div style="display:flex; gap:10px;">
+                    <input type="time" id="shift-start">
+                    <input type="time" id="shift-end">
+                </div>
+                <select id="shift-role">
+                    <option value="Bartender">Bartender</option>
+                    <option value="Backup Bartender">Backup Bartender</option>
+                    <option value="Door">Door</option>
+                    <option value="Security">Security</option>
+                </select>
+                <button class="btn-cyan" onclick="addShift()">Publish Shift</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentUser = null;
+    let shiftsCache = [];
+    let timePunches = [];
+    let currentMonth = new Date().getMonth();
+    let currentYear = new Date().getFullYear();
+    let selectedDate = new Date().toISOString().split('T')[0];
+    let clockTimer = null;
+    let shiftStartTime = null;
+
+    // --- INIT ---
+    function initApp() { console.log("Live App Ready"); }
+
+    // --- AUTH ---
+    async function login() {
+        const pin = document.getElementById('pin-input').value;
+        const q = window.query(window.collection(window.db, "users"), window.where("pin", "==", pin));
+        window.onSnapshot(q, (snapshot) => {
+            if (!snapshot.empty) {
+                const doc = snapshot.docs[0];
+                currentUser = { id: doc.id, ...doc.data() };
+                enterDashboard();
+            } else { document.getElementById('login-msg').innerText = "Invalid PIN"; }
+        });
+    }
+
+    async function createFirstManager() {
+        const name = document.getElementById('setup-name').value;
+        const pin = document.getElementById('setup-pin').value;
+        if(name && pin) {
+            await window.addDoc(window.collection(window.db, "users"), { name: name, pin: pin, role: 'manager', rate: 0 });
+            alert("Created! Now Login.");
+        }
+    }
+
+    function enterDashboard() {
+        document.getElementById('login-screen').classList.remove('active');
+        document.getElementById('main-dashboard').classList.add('active');
+        document.getElementById('user-display').innerText = currentUser.name;
+        if(currentUser.role === 'manager') {
+            document.getElementById('mgr-tab-btn').style.display = 'block';
+            startManagerListeners();
+        }
+        startDataListeners();
+        renderCalendar();
+    }
+    function logout() { location.reload(); }
+
+    // --- LIVE DATA LISTENERS ---
+    function startDataListeners() {
+        // SHIFTS
+        const qShifts = window.query(window.collection(window.db, "shifts"));
+        window.onSnapshot(qShifts, (snap) => {
+            shiftsCache = [];
+            snap.forEach(doc => shiftsCache.push({ id: doc.id, ...doc.data() }));
+            renderCalendar();
+            renderCoverageNeeded();
+        });
+
+        // TIME PUNCHES (For history & manager view)
+        const qTime = window.query(window.collection(window.db, "timecards"), window.orderBy("date", "desc"));
+        window.onSnapshot(qTime, (snap) => {
+            timePunches = [];
+            snap.forEach(doc => timePunches.push({ id: doc.id, ...doc.data() }));
+            renderMyHistory();
+        });
+
+        // SUPPLIES
+        window.onSnapshot(window.collection(window.db, "supplies"), (snap) => {
+            const list = document.getElementById('live-supply-list');
+            list.innerHTML = "";
+            snap.forEach(doc => {
+                const s = doc.data();
+                list.innerHTML += `<div class="list-item"><span>${s.item}</span> ${currentUser.role==='manager' ? `<button style="width:auto;background:red;padding:2px 8px;" onclick="del('supplies','${doc.id}')">X</button>`:''}</div>`;
+            });
+        });
+    }
+
+    function startManagerListeners() {
+        // USERS
+        window.onSnapshot(window.collection(window.db, "users"), (snap) => {
+            const list = document.getElementById('staff-list');
+            const select = document.getElementById('shift-emp-select');
+            const timeSelect = document.getElementById('mgr-time-user');
+            
+            list.innerHTML = ""; select.innerHTML = ""; timeSelect.innerHTML = "<option value=''>Select Employee...</option>";
+            
+            snap.forEach(doc => {
+                const u = doc.data();
+                list.innerHTML += `
+                    <div class="list-item">
+                        <div><b>${u.name}</b> (PIN:${u.pin})<br>$${u.rate}/hr</div>
+                        <button class="btn-cyan btn-small" onclick="editPay('${doc.id}', '${u.name}')">Edit Pay</button>
+                    </div>`;
+                select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
+                timeSelect.innerHTML += `<option value="${doc.id}">${u.name}</option>`;
+            });
+        });
+    }
+
+    // --- CALENDAR LOGIC ---
+    function renderCalendar() {
+        const container = document.getElementById('cal-days-container'); container.innerHTML = "";
+        const firstDay = new Date(currentYear, currentMonth, 1);
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        const startDayIndex = firstDay.getDay();
+
+        document.getElementById('cal-month-year').innerText = firstDay.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+        for(let i=0; i<startDayIndex; i++) container.appendChild(document.createElement('div')); 
+
+        for(let d=1; d<=daysInMonth; d++) {
+            const dayDiv = document.createElement('div'); dayDiv.className = "cal-day"; dayDiv.innerText = d;
+            const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            if(shiftsCache.some(s => s.date === dateStr)) dayDiv.classList.add('has-shift');
+            dayDiv.onclick = () => selectDate(dateStr, dayDiv);
+            if(dateStr === selectedDate) dayDiv.classList.add('selected');
+            container.appendChild(dayDiv);
+        }
+        selectDate(selectedDate, null);
+    }
+
+    function selectDate(dateStr, element) {
+        selectedDate = dateStr;
+        if(element) { document.querySelectorAll('.cal-day').forEach(d => d.classList.remove('selected')); element.classList.add('selected'); }
+        document.getElementById('selected-date-display').innerText = "Schedule: " + dateStr;
+        
+        const list = document.getElementById('day-shifts-list'); list.innerHTML = "";
+        const dayShifts = shiftsCache.filter(s => s.date === dateStr);
+        
+        if(dayShifts.length === 0) list.innerHTML = "<p style='color:#888; text-align:center;'>No shifts.</p>";
+        
+        dayShifts.forEach(s => {
+            const time12 = (t) => { if(!t) return ""; let [h, m] = t.split(':'); let ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12; h = h ? h : 12; return `${h}:${m} ${ampm}`; };
+            
+            // LOGIC FOR COVERAGE BUTTONS
+            let actionBtn = "";
+            if(s.empName === currentUser.name && s.status !== 'open') {
+                actionBtn = `<button class="btn-red btn-small" onclick="requestCover('${s.id}')">Request Cover</button>`;
+            } else if (s.status === 'open' && s.empName !== currentUser.name) {
+                actionBtn = `<button class="btn-green btn-small" onclick="takeShift('${s.id}')">Take Shift</button>`;
+            } else if (s.status === 'open') {
+                 actionBtn = `<small style="color:#d32f2f">Cover Requested</small>`;
+            }
+
+            list.innerHTML += `
+                <div class="list-item" style="border-left-color: ${s.status === 'open' ? '#d32f2f' : 'var(--neon-cyan)'}">
+                    <div><b>${s.empName}</b><br>${time12(s.start)} - ${time12(s.end)} <span class="role-badge">${s.role}</span></div>
+                    <div>${actionBtn} ${currentUser.role==='manager' ? `<button style="background:red; width:auto; padding:2px 5px;" onclick="del('shifts','${s.id}')">X</button>` : ''}</div>
+                </div>`;
+        });
+    }
+    
+    function renderCoverageNeeded() {
+        const list = document.getElementById('open-shifts-list'); list.innerHTML = "";
+        const openShifts = shiftsCache.filter(s => s.status === 'open' && s.empName !== currentUser.name);
+        if(openShifts.length === 0) list.innerHTML = "<small style='color:#777'>No coverage requests.</small>";
+        
+        openShifts.forEach(s => {
+             list.innerHTML += `
+                <div class="list-item" style="border-left: 3px solid #d32f2f;">
+                    <div><b>${s.date}</b><br>${s.empName} needs cover (${s.role})</div>
+                    <button class="btn-green btn-small" onclick="takeShift('${s.id}')">Take</button>
+                </div>`;
+        });
+    }
+
+    function changeMonth(dir) { currentMonth += dir; renderCalendar(); }
+
+    // --- ACTIONS (SHIFT SWAPPING) ---
+    async function requestCover(shiftId) {
+        if(confirm("Mark this shift as needing coverage?")) {
+            await window.updateDoc(window.doc(window.db, "shifts", shiftId), { status: 'open' });
+        }
+    }
+    async function takeShift(shiftId) {
+        if(confirm("Take this shift?")) {
+            await window.updateDoc(window.doc(window.db, "shifts", shiftId), { status: 'assigned', empName: currentUser.name });
+            alert("Shift Taken!");
+        }
+    }
+
+    // --- TIME CLOCK LOGIC ---
+    function handleClock() {
+        const btn = document.getElementById('clock-btn');
+        if(btn.innerText === "CLOCK IN") {
+            // CLOCK IN
+            shiftStartTime = new Date();
+            document.getElementById('clock-status-text').innerText = "In at: " + shiftStartTime.toLocaleTimeString();
+            btn.innerText = "CLOCK OUT"; btn.className = "btn-red";
+            clockTimer = setInterval(() => { document.getElementById('clock-display').innerText = new Date(new Date() - shiftStartTime).toISOString().substr(11,8); }, 1000);
+        } else {
+            // CLOCK OUT
+            const end = new Date();
+            const hrs = Math.round(((end - shiftStartTime) / 3600000) * 4) / 4;
+            const note = prompt("Shift Notes (Issues, Stock, etc):");
+            
+            // SAVE TO DB
+            window.addDoc(window.collection(window.db, "timecards"), {
+                userId: currentUser.id, userName: currentUser.name,
+                date: shiftStartTime.toLocaleDateString(),
+                start: shiftStartTime.toLocaleTimeString(),
+                end: end.toLocaleTimeString(),
+                hours: hrs,
+                note: note || "",
+                approved: false
+            });
+
+            // RESET
+            clearInterval(clockTimer);
+            document.getElementById('clock-display').innerText = "00:00:00";
+            document.getElementById('clock-status-text').innerText = "Not clocked in";
+            btn.innerText = "CLOCK IN"; btn.className = "btn-cyan";
+        }
+    }
+
+    function renderMyHistory() {
+        const list = document.getElementById('my-history-list'); list.innerHTML = "";
+        const myPunches = timePunches.filter(p => p.userId === currentUser.id);
+        myPunches.forEach(p => {
+             list.innerHTML += `
+                <div class="list-item">
+                    <div><b>${p.date}</b> (${p.hours}h)<br><small>${p.start} - ${p.end}</small></div>
+                    <div style="font-size:0.8em; color:${p.approved ? 'var(--neon-green)':'orange'}">${p.approved ? 'APPROVED' : 'PENDING'}</div>
+                </div>`;
+        });
+    }
+
+    // --- MANAGER: TIME CARDS & PAY ---
+    function renderAdminTimeCard() { 
+        const uid = document.getElementById('mgr-time-user').value;
+        const view = document.getElementById('admin-timecard-view'); view.innerHTML = "";
+        if(!uid) return;
+        
+        const punches = timePunches.filter(p => p.userId === uid);
+        punches.forEach(p => {
+            view.innerHTML += `
+                <div class="card" style="border:1px solid ${p.approved ? 'var(--neon-green)':'#444'}">
+                    <div style="display:flex; justify-content:space-between;">
+                        <strong>${p.date}</strong> <span>${p.userName}</span>
+                    </div>
+                    <div>${p.start} - ${p.end}</div>
+                    <div style="margin:5px 0; font-style:italic;">"${p.note || 'No notes'}"</div>
+                    
+                    <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
+                        <input type="number" id="hrs-${p.id}" value="${p.hours}" style="width:60px;"> hrs
+                        <button class="btn-cyan btn-small" onclick="updateHours('${p.id}')">Save</button>
+                        ${!p.approved ? `<button class="btn-green btn-small" onclick="approveCard('${p.id}')">Approve</button>` : '<b>✓</b>'}
+                    </div>
+                </div>`;
+        });
+    }
+
+    async function updateHours(docId) {
+        const val = document.getElementById(`hrs-${docId}`).value;
+        await window.updateDoc(window.doc(window.db, "timecards", docId), { hours: parseFloat(val) });
+        alert("Updated");
+    }
+    
+    async function approveCard(docId) {
+        await window.updateDoc(window.doc(window.db, "timecards", docId), { approved: true });
+    }
+
+    // --- GENERIC DB ACTIONS ---
+    async function addEmployee() {
+        const name = document.getElementById('new-emp-name').value;
+        const pin = document.getElementById('new-emp-pin').value;
+        const rate = document.getElementById('new-emp-rate').value;
+        if(name && pin && rate) {
+            await window.addDoc(window.collection(window.db, "users"), { name, pin, rate, role: 'staff' });
+            alert("Staff Added");
+        }
+    }
+
+    async function editPay(id, name) {
+        const newRate = prompt(`Enter new hourly rate for ${name}:`);
+        if(newRate) { await window.updateDoc(window.doc(window.db, "users", id), { rate: newRate }); }
+    }
+
+    async function addShift() {
+        const name = document.getElementById('shift-emp-select').value;
+        const date = document.getElementById('shift-date').value;
+        const start = document.getElementById('shift-start').value;
+        const end = document.getElementById('shift-end').value;
+        const role = document.getElementById('shift-role').value;
+        if(name && date) {
+            await window.addDoc(window.collection(window.db, "shifts"), { empName: name, date, start, end, role, status: 'assigned' });
+            alert("Published!");
+        }
+    }
+    
+    async function addSupply() {
+        const i = document.getElementById('supply-item').value;
+        if(i) { await window.addDoc(window.collection(window.db, "supplies"), { item: i }); document.getElementById('supply-item').value=""; }
+    }
+
+    window.del = async function(col, id) { if(confirm("Delete?")) await window.deleteDoc(window.doc(window.db, col, id)); }
+
+    // UI TABS
+    window.showTab = function(id) {
+        document.querySelectorAll('.tab-content').forEach(d => d.style.display = 'none');
+        document.getElementById('tab-'+id).style.display = 'block';
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active-tab'));
+        event.target.classList.add('active-tab');
+        if(id === 'schedule') renderCalendar();
+    }
+</script>
+</body>
+</html>
