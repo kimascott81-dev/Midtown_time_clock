@@ -3,10 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Midtown">
-    
+
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#1e1e1e">
+
     <title>Midtown BarShift</title>
     <style>
         /* --- THEME VARIABLES --- */
@@ -22,7 +26,7 @@
 
         /* GLOBAL STYLES */
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; /* Apple System font first */
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: url('background.png') no-repeat center center fixed;
             background-size: cover;
             color: var(--text-light);
@@ -31,20 +35,20 @@
             justify-content: center;
             min-height: 100vh;
             backdrop-filter: blur(4px);
-            /* Prevent pull-to-refresh on mobile to feel more like an app */
             overscroll-behavior-y: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .app-container {
             width: 100%;
             max-width: 480px;
             background-color: var(--bg-dark-overlay);
-            padding: 20px 15px; /* Extra padding for mobile status bar */
+            padding: 20px 15px;
             box-shadow: 0 0 40px rgba(0, 247, 255, 0.15);
             min-height: 100vh;
             border-left: 1px solid rgba(0, 247, 255, 0.1);
             border-right: 1px solid rgba(0, 247, 255, 0.1);
-            padding-bottom: 80px; /* Space for scrolling */
+            padding-bottom: 80px; 
         }
 
         /* TYPOGRAPHY */
@@ -79,7 +83,7 @@
         }
         input, select, textarea { 
             width: 100%; padding: 12px; margin: 5px 0; background: rgba(0,0,0,0.4); 
-            border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; font-family: inherit; font-size: 16px; /* Prevents iOS zoom */
+            border: 1px solid #444; color: white; border-radius: 4px; box-sizing: border-box; font-family: inherit; font-size: 16px; 
         }
         input:focus, textarea:focus { border-color: var(--neon-cyan); outline: none; }
 
@@ -105,7 +109,7 @@
             content: ''; position: absolute; bottom: 4px; width: 4px; height: 4px; background: var(--rust-orange); border-radius: 50%;
         }
 
-        /* MODAL FOR CLOCK OUT NOTES */
+        /* MODAL */
         #modal-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.85); z-index: 100; align-items: center; justify-content: center;
@@ -115,7 +119,6 @@
             box-shadow: 0 0 20px rgba(0, 247, 255, 0.3);
         }
 
-        /* LISTS & TABLES */
         .list-item { 
             background: rgba(0,0,0,0.3); padding: 10px; margin-bottom: 5px; border-radius: 4px; 
             display: flex; justify-content: space-between; align-items: center; border-left: 3px solid var(--neon-cyan);
@@ -136,7 +139,7 @@
     <div id="modal-overlay">
         <div class="modal-content">
             <h3 style="color:var(--neon-cyan);">End Shift Report</h3>
-            <p style="color:var(--text-dim); font-size:0.9em;">Any issues or notes for the manager?</p>
+            <p style="color:var(--text-dim); font-size:0.9em;">Notes for the manager?</p>
             <textarea id="clock-out-note" rows="3" placeholder="e.g. Broken glass, ran out of ice..."></textarea>
             <button class="btn-red" onclick="confirmClockOut()">CONFIRM CLOCK OUT</button>
             <button class="btn-small" style="background:none; color:#888;" onclick="cancelClockOut()">Cancel</button>
@@ -167,22 +170,18 @@
                 <span id="cal-month-year" style="font-weight:bold; color:var(--neon-cyan);">Month Year</span>
                 <button class="btn-small" style="background:#333; color:white;" onclick="changeMonth(1)">&gt;</button>
             </div>
-            
             <div class="calendar-grid">
                 <div class="cal-day-header">S</div><div class="cal-day-header">M</div><div class="cal-day-header">T</div><div class="cal-day-header">W</div><div class="cal-day-header">T</div><div class="cal-day-header">F</div><div class="cal-day-header">S</div>
                 <div id="cal-days-container" style="display:contents;"></div> 
             </div>
-
             <div style="display:flex; gap:10px; margin-bottom:15px;">
                 <button class="btn-small btn-red" onclick="submitRequest('OFF')">Request OFF</button>
                 <button class="btn-small btn-green" onclick="submitRequest('WORK')">Request TO WORK</button>
             </div>
-
             <div class="card">
                 <h3 id="selected-date-display" style="font-size:1em; color:var(--text-dim); text-align:left;">Select a date...</h3>
                 <div id="day-shifts-list"></div>
             </div>
-
             <div class="card">
                 <h3 style="font-size:1em; text-align:left;">My Requests</h3>
                 <div id="my-requests-list"></div>
@@ -227,10 +226,7 @@
         </div>
 
         <div id="tab-manage-sched" class="tab-content" style="display:none;">
-            <div class="card">
-                <h3>Request Review</h3>
-                <div id="mgr-requests-list"></div>
-            </div>
+            <div class="card"><h3>Request Review</h3><div id="mgr-requests-list"></div></div>
             <div class="card">
                 <h3>Assign Shift</h3>
                 <select id="mgr-assign-staff"></select>
@@ -275,26 +271,17 @@
         const [h, m] = time24.split(':');
         let hours = parseInt(h);
         const ampm = hours >= 12 ? 'PM' : 'AM';
-        hours = hours % 12;
-        hours = hours ? hours : 12; 
+        hours = hours % 12; hours = hours ? hours : 12; 
         return `${hours}:${m} ${ampm}`;
     }
 
-    // --- LOGIN/NAV ---
+    // --- LOGIC ---
     function login() {
         const pin = document.getElementById('pin-input').value;
         const user = users.find(u => u.pin === pin);
-        if (user) {
-            currentUser = user;
-            document.getElementById('pin-input').value = "";
-            loadDashboard();
-            showScreen('main-dashboard');
-        } else { alert("Invalid PIN"); }
+        if (user) { currentUser = user; document.getElementById('pin-input').value = ""; loadDashboard(); showScreen('main-dashboard'); } else { alert("Invalid PIN"); }
     }
-    function logout() {
-        currentUser = null; isClockedIn = false; clearInterval(clockTimer); shiftStartTime = null;
-        showScreen('login-screen');
-    }
+    function logout() { currentUser = null; isClockedIn = false; clearInterval(clockTimer); shiftStartTime = null; showScreen('login-screen'); }
     function showScreen(id) { document.querySelectorAll('.screen').forEach(s => s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
 
     function loadDashboard() {
@@ -319,132 +306,68 @@
         if(currentUser.role === 'manager') { renderStaffList(); renderMasterSchedule(); populateUserSelects(); }
     }
 
-    // --- SCHEDULE & REQUESTS ---
     function renderCalendar() {
         const container = document.getElementById('cal-days-container'); container.innerHTML = "";
         const firstDay = new Date(currentYear, currentMonth, 1);
         const lastDay = new Date(currentYear, currentMonth + 1, 0);
         const daysInMonth = lastDay.getDate();
         const startDayIndex = firstDay.getDay();
-
         document.getElementById('cal-month-year').innerText = firstDay.toLocaleString('default', { month: 'long', year: 'numeric' });
         for(let i=0; i<startDayIndex; i++) container.appendChild(document.createElement('div')); 
-
         for(let d=1; d<=daysInMonth; d++) {
             const dayDiv = document.createElement('div'); dayDiv.className = "cal-day"; dayDiv.innerText = d;
             const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-            const dayShifts = shifts.filter(s => s.date === dateStr);
-            if(dayShifts.length > 0) dayDiv.classList.add('has-shift');
+            if(shifts.filter(s => s.date === dateStr).length > 0) dayDiv.classList.add('has-shift');
             dayDiv.onclick = () => selectDateFunc(dateStr, dayDiv);
             if(dateStr === selectedDate) dayDiv.classList.add('selected');
             container.appendChild(dayDiv);
         }
-        selectDateFunc(selectedDate, null); // Refresh list
-        renderMyRequests();
+        selectDateFunc(selectedDate, null); renderMyRequests();
     }
-
     function selectDateFunc(dateStr, element) {
         selectedDate = dateStr;
-        if(element) {
-            document.querySelectorAll('.cal-day').forEach(d => d.classList.remove('selected'));
-            element.classList.add('selected');
-        }
+        if(element) { document.querySelectorAll('.cal-day').forEach(d => d.classList.remove('selected')); element.classList.add('selected'); }
         document.getElementById('selected-date-display').innerText = "Date: " + dateStr;
         const list = document.getElementById('day-shifts-list'); list.innerHTML = "";
         const dayShifts = shifts.filter(s => s.date === dateStr);
         if(dayShifts.length === 0) { list.innerHTML = "<p style='color:#888; text-align:center;'>No shifts.</p>"; return; }
-        dayShifts.forEach(shift => {
-            list.innerHTML += `<div class="list-item"><div><strong>${shift.name}</strong> (${formatTime12(shift.start)}-${formatTime12(shift.end)})</div></div>`;
-        });
+        dayShifts.forEach(shift => { list.innerHTML += `<div class="list-item"><div><strong>${shift.name}</strong> (${formatTime12(shift.start)}-${formatTime12(shift.end)})</div></div>`; });
     }
-
     function changeMonth(dir) { currentMonth += dir; renderCalendar(); }
-
-    function submitRequest(type) {
-        if(confirm(`Request ${type} for ${selectedDate}?`)) {
-            requests.push({ id: Date.now(), userId: currentUser.id, name: currentUser.name, date: selectedDate, type: type, status: 'pending' });
-            alert("Request sent to manager.");
-            renderMyRequests();
-        }
-    }
-
+    function submitRequest(type) { if(confirm(`Request ${type} for ${selectedDate}?`)) { requests.push({ id: Date.now(), userId: currentUser.id, name: currentUser.name, date: selectedDate, type: type, status: 'pending' }); alert("Sent."); renderMyRequests(); } }
     function renderMyRequests() {
         const list = document.getElementById('my-requests-list'); list.innerHTML = "";
-        const myReqs = requests.filter(r => r.userId === currentUser.id);
-        myReqs.forEach(r => {
+        requests.filter(r => r.userId === currentUser.id).forEach(r => {
             let color = r.status === 'approved' ? 'var(--neon-green)' : (r.status === 'denied' ? '#d32f2f' : 'orange');
             list.innerHTML += `<div class="list-item"><div>${r.date} - ${r.type}</div><span style="color:${color}; font-weight:bold">${r.status.toUpperCase()}</span></div>`;
         });
     }
-
     function renderMgrRequests() {
         const list = document.getElementById('mgr-requests-list'); list.innerHTML = "";
         const pending = requests.filter(r => r.status === 'pending');
         if(pending.length === 0) list.innerHTML = "<small>No pending requests.</small>";
         pending.forEach(r => {
-            list.innerHTML += `<div class="list-item"><div><strong>${r.name}</strong> wants ${r.type}<br>${r.date}</div>
-            <div style="display:flex; gap:5px;"><button class="btn-green btn-small" onclick="handleReq(${r.id}, 'approved')">Approve</button><button class="btn-red btn-small" onclick="handleReq(${r.id}, 'denied')">Deny</button></div></div>`;
+            list.innerHTML += `<div class="list-item"><div><strong>${r.name}</strong> wants ${r.type}<br>${r.date}</div><div style="display:flex; gap:5px;"><button class="btn-green btn-small" onclick="handleReq(${r.id}, 'approved')">Approve</button><button class="btn-red btn-small" onclick="handleReq(${r.id}, 'denied')">Deny</button></div></div>`;
         });
     }
-    
-    function handleReq(id, status) {
-        const r = requests.find(x => x.id === id);
-        r.status = status;
-        renderMgrRequests();
-    }
+    function handleReq(id, status) { requests.find(x => x.id === id).status = status; renderMgrRequests(); }
 
-    // --- CLOCK IN / OUT WITH NOTES ---
     function initClockOut() {
         const btn = document.getElementById('clock-btn');
         if(!isClockedIn) {
-            // CLOCK IN
-            isClockedIn = true; shiftStartTime = new Date(); 
-            btn.innerText = "CLOCK OUT"; btn.className = "btn-red";
+            isClockedIn = true; shiftStartTime = new Date(); btn.innerText = "CLOCK OUT"; btn.className = "btn-red";
             document.getElementById('clock-start-time').innerText = "In: " + shiftStartTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-            clockTimer = setInterval(() => {
-                const diff = new Date() - shiftStartTime;
-                document.getElementById('clock-timer').innerText = new Date(diff).toISOString().substr(11,8);
-            }, 1000);
-        } else {
-            // OPEN MODAL FOR NOTES
-            document.getElementById('modal-overlay').style.display = "flex";
-        }
+            clockTimer = setInterval(() => { document.getElementById('clock-timer').innerText = new Date(new Date() - shiftStartTime).toISOString().substr(11,8); }, 1000);
+        } else { document.getElementById('modal-overlay').style.display = "flex"; }
     }
-
     function confirmClockOut() {
-        const note = document.getElementById('clock-out-note').value;
-        const end = new Date(); 
-        const hrs = Math.round(((end-shiftStartTime)/3600000)*4)/4;
-        
-        timePunches.push({ 
-            id: Date.now(), 
-            userId: currentUser.id, 
-            date: shiftStartTime.toLocaleDateString(), 
-            start: shiftStartTime.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), 
-            end: end.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), 
-            hours: hrs,
-            note: note,
-            mgrResponse: ""
-        });
-
-        // Reset UI
-        isClockedIn = false; clearInterval(clockTimer);
-        document.getElementById('clock-btn').innerText = "CLOCK IN"; 
-        document.getElementById('clock-btn').className = "btn-cyan"; 
-        document.getElementById('clock-timer').innerText = "00:00:00";
-        document.getElementById('clock-out-note').value = ""; // clear note
-        document.getElementById('modal-overlay').style.display = "none"; // close modal
-        renderMyTimeCard();
+        const end = new Date(); const hrs = Math.round(((end-shiftStartTime)/3600000)*4)/4;
+        timePunches.push({ id: Date.now(), userId: currentUser.id, date: shiftStartTime.toLocaleDateString(), start: shiftStartTime.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), end: end.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}), hours: hrs, note: document.getElementById('clock-out-note').value, mgrResponse: "" });
+        isClockedIn = false; clearInterval(clockTimer); document.getElementById('clock-btn').innerText = "CLOCK IN"; document.getElementById('clock-btn').className = "btn-cyan"; document.getElementById('clock-timer').innerText = "00:00:00"; document.getElementById('clock-out-note').value = ""; document.getElementById('modal-overlay').style.display = "none"; renderMyTimeCard();
     }
-
-    function cancelClockOut() {
-        document.getElementById('modal-overlay').style.display = "none";
-    }
-
-    // --- TIME CARD & NOTES DISPLAY ---
+    function cancelClockOut() { document.getElementById('modal-overlay').style.display = "none"; }
     function renderMyTimeCard() {
-        const tbody = document.querySelector('#my-timecard-table tbody'); tbody.innerHTML = "";
-        let tH=0, tP=0;
+        const tbody = document.querySelector('#my-timecard-table tbody'); tbody.innerHTML = ""; let tH=0, tP=0;
         timePunches.filter(p=>p.userId===currentUser.id).forEach(p=>{
             const pay=p.hours*currentUser.rate; tH+=p.hours; tP+=pay;
             let noteHtml = p.mgrResponse ? `<br><small style="color:var(--neon-green)">Mgr: ${p.mgrResponse}</small>` : "";
@@ -453,46 +376,24 @@
         tbody.innerHTML += `<tr style="font-weight:bold; border-top:1px solid #555"><td colspan="2">TOTAL</td><td>${tH}</td><td>$${tP.toFixed(2)}</td></tr>`;
     }
 
-    // --- MANAGER FEATURES ---
     function renderAdminTimeCard() { 
-        const uid=parseInt(document.getElementById('mgr-time-user').value); if(!uid)return; 
-        const p=timePunches.filter(x=>x.userId===uid); 
-        const view = document.getElementById('admin-timecard-view'); view.innerHTML = "";
-
-        p.forEach(punch => {
-            view.innerHTML += `
+        const uid=parseInt(document.getElementById('mgr-time-user').value); if(!uid)return; const p=timePunches.filter(x=>x.userId===uid); 
+        document.getElementById('admin-timecard-view').innerHTML = p.map(punch => `
             <div class="card" style="margin-bottom:10px; border-left:2px solid var(--neon-cyan);">
-                <div style="display:flex; justify-content:space-between;">
-                    <strong>${punch.date}</strong> <span>${punch.hours} hrs</span>
-                </div>
+                <div style="display:flex; justify-content:space-between;"><strong>${punch.date}</strong> <span>${punch.hours} hrs</span></div>
                 <div style="font-size:0.9em; color:#ccc; margin:5px 0;">Note: "${punch.note || 'None'}"</div>
                 ${punch.mgrResponse ? `<div style="font-size:0.9em; color:var(--neon-green)">Replied: ${punch.mgrResponse}</div>` : 
-                `<div style="display:flex; gap:5px;"><input type="text" id="resp-${punch.id}" placeholder="Reply..."><button class="btn-cyan btn-small" onclick="saveReply(${punch.id})">Send</button></div>`}
-            </div>`;
-        });
+                `<div style="display:flex; gap:5px;"><input type="text" id="resp-${punch.id}" placeholder="Reply..."><button class="btn-cyan btn-small" onclick="timePunches.find(x=>x.id==${punch.id}).mgrResponse=document.getElementById('resp-${punch.id}').value;renderAdminTimeCard()">Send</button></div>`}
+            </div>`).join('');
     }
 
-    function saveReply(punchId) {
-        const txt = document.getElementById(`resp-${punchId}`).value;
-        if(txt) {
-            timePunches.find(p => p.id === punchId).mgrResponse = txt;
-            alert("Reply sent.");
-            renderAdminTimeCard();
-        }
-    }
-
-    function renderMasterSchedule() { 
-        document.getElementById('master-schedule-list').innerHTML = shifts.map(s=>`<div class="list-item"><b>${s.name}</b> ${s.date}<br>${formatTime12(s.start)} - ${formatTime12(s.end)} <span class="role-badge">${s.shiftRole}</span> <button class="btn-red btn-small" onclick="shifts=shifts.filter(x=>x.id!==${s.id});renderMasterSchedule()">X</button></div>`).join(''); 
-    }
-    
-    // Other Standard Functions
+    function renderMasterSchedule() { document.getElementById('master-schedule-list').innerHTML = shifts.map(s=>`<div class="list-item"><b>${s.name}</b> ${s.date}<br>${formatTime12(s.start)} - ${formatTime12(s.end)} <span class="role-badge">${s.shiftRole}</span> <button class="btn-red btn-small" onclick="shifts=shifts.filter(x=>x.id!==${s.id});renderMasterSchedule()">X</button></div>`).join(''); }
     function addEmployee() { users.push({id:Date.now(), name:document.getElementById('new-name').value, pin:document.getElementById('new-pin').value, rate:document.getElementById('new-rate').value, role:document.getElementById('new-role').value}); alert("Added"); renderStaffList(); populateUserSelects(); }
     function renderStaffList() { document.getElementById('staff-list').innerHTML = users.map(u=>`<div class="list-item"><b>${u.name}</b> (PIN:${u.pin}) $${u.rate}/hr</div>`).join(''); }
     function populateUserSelects() { const s1=document.getElementById('mgr-assign-staff'), s2=document.getElementById('mgr-time-user'); s1.innerHTML=""; s2.innerHTML="<option value=''>Select...</option>"; users.forEach(u=>{ s1.innerHTML+=`<option value='${u.id}'>${u.name}</option>`; s2.innerHTML+=`<option value='${u.id}'>${u.name}</option>`; }); }
     function publishShift() { shifts.push({id:Date.now(), userId:parseInt(document.getElementById('mgr-assign-staff').value), name:users.find(u=>u.id==document.getElementById('mgr-assign-staff').value).name, date:document.getElementById('mgr-assign-date').value, start:document.getElementById('mgr-assign-start').value, end:document.getElementById('mgr-assign-end').value, shiftRole:document.getElementById('mgr-assign-role').value, status:'assigned'}); renderMasterSchedule(); }
     function reportSupply() { const i=document.getElementById('supply-item').value; if(i) { supplies.push({id:Date.now(), item:i, status:document.getElementById('supply-status').value, resolved:false}); document.getElementById('supply-item').value=""; renderSupplies(); }}
     function renderSupplies() { const l=document.getElementById('supply-list'); l.innerHTML=""; supplies.filter(s=>!s.resolved).forEach(s=>{ l.innerHTML+=`<div class="list-item"><span>${s.item} - <b style="color:${s.status==='Low'?'var(--rust-orange)':'#d32f2f'}">${s.status}</b></span>${currentUser.role==='manager'?`<button class="btn-green btn-small" onclick="supplies.find(x=>x.id===${s.id}).resolved=true;renderSupplies()">✓</button>`:''}</div>`; }); }
-
 </script>
 </body>
 </html>
