@@ -9,32 +9,46 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0a1929">
     <link rel="manifest" href="manifest.json">
-    <title>Midtown Live V15</title>
+    <title>Midtown V15.1 (Debug)</title>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc, deleteDoc, where } 
         from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-        // --- PASTE YOUR FIREBASE CONFIG HERE ---
+        // ============================================================
+        // !!! IMPORTANT: PASTE YOUR KEYS BELOW OR LOGIN WILL FAIL !!!
+        // ============================================================
         const firebaseConfig = {
-            a apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
+            apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
   authDomain: "midtown-time-clock.firebaseapp.com",
   projectId: "midtown-time-clock",
   storageBucket: "midtown-time-clock.firebasestorage.app",
   messagingSenderId: "328451525897",
   appId: "1:328451525897:web:d27b422e08255e964317d8"
         };
-        // ---------------------------------------
+        // ============================================================
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        
-        window.db = db;
-        window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
-        window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
-        window.doc = doc; window.deleteDoc = deleteDoc; window.where = where;
-        
+        // SAFETY CHECK: Did you forget to paste the keys?
+        if (firebaseConfig.apiKey.includes("PASTE_YOUR")) {
+            alert("CRITICAL ERROR: You forgot to paste your Firebase Config keys! The app cannot log in without them. Please edit index.html and paste your keys.");
+        }
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            
+            // Expose to window
+            window.db = db;
+            window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
+            window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
+            window.doc = doc; window.deleteDoc = deleteDoc; window.where = where;
+            
+            console.log("Firebase Initialized Successfully");
+        } catch (e) {
+            alert("Database Connection Failed: " + e.message);
+        }
+
         initApp(); 
     </script>
 
@@ -71,7 +85,6 @@
         @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
         table { width: 100%; border-collapse: collapse; font-size: 0.9em; } td, th { padding: 8px; border-bottom: 1px solid #444; text-align: left; }
         
-        /* Edit Form Styles */
         .edit-row { display: flex; gap: 5px; margin-top: 5px; }
         .edit-row input { padding: 8px; font-size: 0.9em; }
     </style>
@@ -112,7 +125,7 @@
 
         <div id="tab-schedule" class="tab-content">
             <div class="card" style="text-align:center; padding:10px;">
-                <h3 id="cal-month-year" style="margin:0; border:none;">Month Year</h3>
+                <h3 id="cal-month-year" style="margin:0; border:none;">Upcoming Shifts</h3>
             </div>
             <div id="day-shifts-list"></div>
             <div class="card" style="border: 1px solid var(--theme-red);">
@@ -187,7 +200,281 @@
 
     function initApp() { console.log("Live App Ready"); }
 
-    // --- AUTH ---
     async function login() {
-        const pin = document.getElementById('
+        // Fallback safety check for queries
+        if (!window.db) { alert("Database not connected. Check API Keys."); return; }
+        
+        const pin = document.getElementById('pin-input').value;
+        try {
+            const q = window.query(window.collection(window.db, "users"), window.where("pin", "==", pin));
+            window.onSnapshot(q, (snapshot) => {
+                if (!snapshot.empty) {
+                    const doc = snapshot.docs[0];
+                    currentUser = { id: doc.id, ...doc.data() };
+                    enterDashboard();
+                } else { document.getElementById('login-msg').innerText = "Invalid PIN"; }
+            });
+        } catch (e) {
+            alert("Login Error: " + e.message + ". Did you paste the API Keys?");
+        }
+    }
 
+    async function createFirstManager() {
+        const name = document.getElementById('setup-name').value;
+        const pin = document.getElementById('setup-pin').value;
+        if(name && pin) {
+            await window.addDoc(window.collection(window.db, "users"), { name, pin, rate: 0, role: 'manager' });
+            alert("Created! Login now.");
+        }
+    }
+
+    function enterDashboard() {
+        document.getElementById('login-screen').classList.remove('active');
+        document.getElementById('main-dashboard').classList.add('active');
+        document.getElementById('user-display').innerText = currentUser.name;
+        if(currentUser.role === 'manager') {
+            document.getElementById('mgr-tab-btn').style.display = 'block';
+            startManagerListeners();
+        }
+        startDataListeners();
+        renderScheduleList();
+    }
+    function logout() { location.reload(); }
+
+    function startDataListeners() {
+        window.onSnapshot(window.query(window.collection(window.db, "shifts"), window.orderBy("date")), (snap) => {
+            shiftsCache = [];
+            snap.forEach(doc => shiftsCache.push({ id: doc.id, ...doc.data() }));
+            renderScheduleList(); renderCoverageNeeded();
+        });
+
+        window.onSnapshot(window.query(window.collection(window.db, "timecards"), window.orderBy("date", "desc")), (snap) => {
+            timePunches = [];
+            snap.forEach(doc => timePunches.push({ id: doc.id, ...doc.data() }));
+            renderMyHistory();
+            if(currentUser.role === 'manager') renderAdminTimeCard();
+        });
+
+        window.onSnapshot(window.collection(window.db, "supplies"), (snap) => {
+            const list = document.getElementById('live-supply-list');
+            list.innerHTML = "";
+            snap.forEach(doc => {
+                const s = doc.data();
+                let responseHtml = s.response ? `<div style="color:var(--theme-blue); font-size:0.9em; margin-top:5px;">Mgr: "${s.response}"</div>` : '';
+                let managerAction = "";
+                
+                if(currentUser.role === 'manager') {
+                    managerAction = `
+                    <div style="margin-top:5px; display:flex; gap:5px;">
+                        <input type="text" id="resp-${doc.id}" placeholder="Reply..." style="padding:5px; font-size:0.8em;">
+                        <button class="btn-blue btn-small" onclick="respondSupply('${doc.id}')">Reply</button>
+                        <button class="btn-red btn-small" onclick="del('supplies','${doc.id}')">X</button>
+                    </div>`;
+                }
+
+                list.innerHTML += `
+                <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                    <div style="width:100%; display:flex; justify-content:space-between;">
+                        <span>${s.item}</span>
+                        <small style="color:#888">${s.date ? s.date.substring(5) : ''}</small>
+                    </div>
+                    ${responseHtml}
+                    ${managerAction}
+                </div>`;
+            });
+        });
+    }
+
+    function startManagerListeners() {
+        window.onSnapshot(window.collection(window.db, "users"), (snap) => {
+            const list = document.getElementById('staff-list');
+            const select = document.getElementById('shift-emp-select');
+            const timeSelect = document.getElementById('mgr-time-user');
+            
+            list.innerHTML = ""; select.innerHTML = ""; timeSelect.innerHTML = "<option value=''>Select Employee...</option>";
+            usersCache = []; 
+            
+            snap.forEach(doc => {
+                const u = doc.data();
+                usersCache.push({ id: doc.id, ...u }); 
+                
+                list.innerHTML += `
+                    <div class="list-item">
+                        <div><b>${u.name}</b> (PIN:${u.pin})<br>$${u.rate}/hr</div>
+                        <button class="btn-blue btn-small" onclick="editPay('${doc.id}', '${u.name}')">Edit Pay</button>
+                    </div>`;
+                select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
+                timeSelect.innerHTML += `<option value="${doc.id}">${u.name}</option>`;
+            });
+        });
+    }
+
+    function renderScheduleList() {
+        const list = document.getElementById('day-shifts-list'); list.innerHTML = "";
+        const today = new Date().toISOString().split('T')[0];
+        
+        shiftsCache.filter(s => s.date >= today).forEach(s => {
+            const time12 = (t) => { if(!t) return ""; let [h, m] = t.split(':'); let ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12; h = h ? h : 12; return `${h}:${m} ${ampm}`; };
+            
+            let actionBtn = "";
+            if(s.empName === currentUser.name && s.status !== 'open') actionBtn = `<button class="btn-red btn-small" onclick="requestCover('${s.id}')">Request Cover</button>`;
+            else if (s.status === 'open' && s.empName !== currentUser.name) actionBtn = `<button class="btn-blue btn-small" onclick="takeShift('${s.id}')">Take Shift</button>`;
+            else if (s.status === 'open') actionBtn = `<small style="color:var(--theme-red)">Cover Requested</small>`;
+
+            list.innerHTML += `
+                <div class="list-item" style="border-left-color: ${s.status === 'open' ? 'var(--theme-red)' : 'var(--theme-blue)'}">
+                    <div><b>${s.date}</b>: ${s.empName}<br>${time12(s.start)} - ${time12(s.end)} <span class="role-badge">${s.role}</span></div>
+                    <div>${actionBtn} ${currentUser.role==='manager' ? `<button style="background:var(--theme-red); width:auto; padding:2px 5px;" onclick="del('shifts','${s.id}')">X</button>` : ''}</div>
+                </div>`;
+        });
+    }
+    
+    function renderCoverageNeeded() {
+        const list = document.getElementById('open-shifts-list'); list.innerHTML = "";
+        const openShifts = shiftsCache.filter(s => s.status === 'open' && s.empName !== currentUser.name);
+        if(openShifts.length === 0) list.innerHTML = "<small style='color:#777'>No coverage requests.</small>";
+        openShifts.forEach(s => {
+             list.innerHTML += `
+                <div class="list-item" style="border-left: 3px solid var(--theme-red);">
+                    <div><b>${s.date}</b><br>${s.empName} needs cover (${s.role})</div>
+                    <button class="btn-blue btn-small" onclick="takeShift('${s.id}')">Take</button>
+                </div>`;
+        });
+    }
+
+    async function requestCover(id) { if(confirm("Request Cover?")) await window.updateDoc(window.doc(window.db, "shifts", id), { status: 'open' }); }
+    async function takeShift(id) { if(confirm("Take Shift?")) await window.updateDoc(window.doc(window.db, "shifts", id), { status: 'assigned', empName: currentUser.name }); }
+
+    function handleClock() {
+        const btn = document.getElementById('clock-btn');
+        if(btn.innerText === "CLOCK IN") {
+            shiftStartTime = new Date();
+            document.getElementById('clock-status-text').innerText = "In at: " + shiftStartTime.toLocaleTimeString();
+            btn.innerText = "CLOCK OUT"; btn.className = "btn-red";
+            clockTimer = setInterval(() => { document.getElementById('clock-display').innerText = new Date(new Date() - shiftStartTime).toISOString().substr(11,8); }, 1000);
+        } else {
+            const end = new Date();
+            const hrs = Math.round(((end - shiftStartTime) / 3600000) * 4) / 4;
+            const note = prompt("Shift Notes?");
+            window.addDoc(window.collection(window.db, "timecards"), {
+                userId: currentUser.id, userName: currentUser.name,
+                date: shiftStartTime.toISOString().split('T')[0], 
+                start: shiftStartTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
+                end: end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+                hours: hrs, note: note || "", approved: false
+            });
+            clearInterval(clockTimer); document.getElementById('clock-display').innerText = "00:00:00";
+            document.getElementById('clock-status-text').innerText = "Not clocked in";
+            btn.innerText = "CLOCK IN"; btn.className = "btn-blue";
+        }
+    }
+
+    function renderMyHistory() {
+        const list = document.getElementById('my-history-list'); list.innerHTML = "";
+        const myPunches = timePunches.filter(p => p.userId === currentUser.id);
+        const myUser = usersCache.find(u => u.id === currentUser.id);
+        const rate = myUser ? parseFloat(myUser.rate) : (parseFloat(currentUser.rate) || 0);
+        
+        myPunches.forEach(p => {
+             const pay = (p.hours * rate).toFixed(2);
+             list.innerHTML += `
+                <div class="list-item">
+                    <div><b>${p.date}</b> (${p.hours}h) <span style="color:#2ecc71">$${pay}</span><br><small>${p.start} - ${p.end}</small></div>
+                    <div style="font-size:0.8em; color:${p.approved ? '#2ecc71':'orange'}">${p.approved ? 'APPROVED' : 'PENDING'}</div>
+                </div>`;
+        });
+    }
+
+    function renderAdminTimeCard() { 
+        const uid = document.getElementById('mgr-time-user').value;
+        const view = document.getElementById('admin-timecard-view'); view.innerHTML = "";
+        if(!uid) return;
+        
+        const user = usersCache.find(u => u.id === uid);
+        const rate = user ? parseFloat(user.rate) : 0;
+        const punches = timePunches.filter(p => p.userId === uid);
+
+        punches.forEach(p => {
+            const pay = (p.hours * rate).toFixed(2);
+            
+            view.innerHTML += `
+                <div class="card" style="border:1px solid ${p.approved ? '#2ecc71':'#444'}">
+                    <div style="display:flex; justify-content:space-between;">
+                        <strong>${p.userName}</strong> <span style="color:#2ecc71">$${pay}</span>
+                    </div>
+                    
+                    <div class="edit-row">
+                        <input type="date" id="date-${p.id}" value="${p.date}">
+                    </div>
+                    <div class="edit-row">
+                        <input type="text" id="start-${p.id}" value="${p.start}" placeholder="Start">
+                        <input type="text" id="end-${p.id}" value="${p.end}" placeholder="End">
+                    </div>
+
+                    <div style="margin:5px 0; font-style:italic; color:#ccc;">"${p.note || ''}"</div>
+                    
+                    <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
+                        <button class="btn-blue btn-small" onclick="updateTimeCard('${p.id}')">Save Changes</button>
+                        ${!p.approved ? `<button class="btn-green btn-small" onclick="approveCard('${p.id}')">Approve</button>` : '<b>✓</b>'}
+                        <button class="btn-red btn-small" onclick="del('timecards', '${p.id}')">Delete</button>
+                    </div>
+                </div>`;
+        });
+    }
+
+    async function updateTimeCard(docId) {
+        const newDate = document.getElementById(`date-${docId}`).value;
+        const newStart = document.getElementById(`start-${docId}`).value;
+        const newEnd = document.getElementById(`end-${docId}`).value;
+        const newHours = prompt("Times changed. Enter new Total Hours (e.g., 8.5):");
+        
+        if(newHours) {
+            await window.updateDoc(window.doc(window.db, "timecards", docId), { 
+                date: newDate, 
+                start: newStart, 
+                end: newEnd, 
+                hours: parseFloat(newHours) 
+            });
+            alert("Updated");
+        }
+    }
+    
+    async function respondSupply(docId) {
+        const reply = document.getElementById(`resp-${docId}`).value;
+        if(reply) await window.updateDoc(window.doc(window.db, "supplies", docId), { response: reply });
+    }
+
+    async function approveCard(docId) { await window.updateDoc(window.doc(window.db, "timecards", docId), { approved: true }); }
+    async function addEmployee() {
+        const name = document.getElementById('new-emp-name').value;
+        const pin = document.getElementById('new-emp-pin').value;
+        const rate = document.getElementById('new-emp-rate').value;
+        if(name && pin) { await window.addDoc(window.collection(window.db, "users"), { name, pin, rate, role: 'staff' }); alert("Added"); }
+    }
+    async function editPay(id, name) {
+        const newRate = prompt(`New Rate for ${name}:`);
+        if(newRate) await window.updateDoc(window.doc(window.db, "users", id), { rate: newRate });
+    }
+    async function addShift() {
+        const name = document.getElementById('shift-emp-select').value;
+        const date = document.getElementById('shift-date').value;
+        const start = document.getElementById('shift-start').value;
+        const end = document.getElementById('shift-end').value;
+        const role = document.getElementById('shift-role').value;
+        if(name && date) { await window.addDoc(window.collection(window.db, "shifts"), { empName: name, date, start, end, role, status: 'assigned' }); alert("Published!"); }
+    }
+    async function addSupply() {
+        const i = document.getElementById('supply-item').value;
+        if(i) { await window.addDoc(window.collection(window.db, "supplies"), { item: i, date: new Date().toISOString() }); document.getElementById('supply-item').value=""; }
+    }
+    window.del = async function(col, id) { if(confirm("Delete?")) await window.deleteDoc(window.doc(window.db, col, id)); }
+    window.showTab = function(id) {
+        document.querySelectorAll('.tab-content').forEach(d => d.style.display = 'none');
+        document.getElementById('tab-'+id).style.display = 'block';
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active-tab'));
+        event.target.classList.add('active-tab');
+        if(id === 'schedule') renderScheduleList();
+    }
+</script>
+</body>
+</html>
