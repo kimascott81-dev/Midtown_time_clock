@@ -9,7 +9,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="theme-color" content="#0a1929">
     <link rel="manifest" href="manifest.json">
-    <title>Midtown Live V17</title>
+    <title>Midtown Live V17.1</title>
     
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -17,10 +17,10 @@
         from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         // ==========================================
-        // PASTE YOUR FIREBASE CONFIG KEYS HERE
+        // !!! PASTE YOUR FIREBASE KEYS BELOW !!!
         // ==========================================
         const firebaseConfig = {
-         apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
+           apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
   authDomain: "midtown-time-clock.firebaseapp.com",
   projectId: "midtown-time-clock",
   storageBucket: "midtown-time-clock.firebasestorage.app",
@@ -28,15 +28,25 @@
   appId: "1:328451525897:web:d27b422e08255e964317d8"        };
         // ==========================================
 
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        
-        window.db = db;
-        window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
-        window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
-        window.doc = doc; window.deleteDoc = deleteDoc; window.where = where;
-        
-        initApp(); 
+        // SAFETY CHECK: Did you forget the keys?
+        if (firebaseConfig.apiKey.includes("PASTE_YOUR")) {
+            alert("STOP! You forgot to paste your Firebase Keys in the code. The app cannot log in without them.");
+        }
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const db = getFirestore(app);
+            
+            window.db = db;
+            window.collection = collection; window.addDoc = addDoc; window.onSnapshot = onSnapshot;
+            window.query = query; window.orderBy = orderBy; window.updateDoc = updateDoc;
+            window.doc = doc; window.deleteDoc = deleteDoc; window.where = where;
+            
+            console.log("Firebase Connected");
+            initApp(); 
+        } catch (e) {
+            alert("Error Connecting to Database: " + e.message);
+        }
     </script>
 
     <style>
@@ -63,20 +73,19 @@
         .btn-green { background: #2ecc71; color: white; border: 1px solid #27ae60; }
         .btn-small { width: auto; padding: 6px 12px; font-size: 0.8em; margin:0; }
 
-        /* CALENDAR STYLES - FORCED VISIBILITY */
+        /* CALENDAR STYLES */
         .calendar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; }
         .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 20px; }
         .cal-day-header { text-align: center; font-size: 0.8em; color: #aaa; padding-bottom: 5px; font-weight: bold; }
         
         .cal-day { 
             background: rgba(255,255,255,0.1); 
-            height: 50px; /* Fixed height to ensure visibility */
+            height: 50px; 
             display: flex; align-items: center; justify-content: center; 
             border-radius: 6px; cursor: pointer; position: relative; 
             font-size: 1em; border: 1px solid transparent;
         }
         .cal-day.selected { background: var(--theme-blue); color: white; font-weight: bold; border: 1px solid white; box-shadow: 0 0 10px var(--theme-blue); }
-        /* The Red Dot */
         .cal-day.has-shift::after { 
             content: ''; position: absolute; bottom: 6px; 
             width: 6px; height: 6px; background: var(--theme-red); 
@@ -222,7 +231,6 @@
 
     function initApp() { console.log("Live App Ready"); }
 
-    // --- AUTH ---
     async function login() {
         if (!window.db) { alert("Database not connected. Check API Keys."); return; }
         const pin = document.getElementById('pin-input').value;
@@ -256,12 +264,10 @@
             startManagerListeners();
         }
         startDataListeners();
-        // Force render calendar immediately
         renderCalendar();
     }
     function logout() { location.reload(); }
 
-    // --- LISTENERS ---
     function startDataListeners() {
         window.onSnapshot(window.query(window.collection(window.db, "shifts"), window.orderBy("date")), (snap) => {
             shiftsCache = [];
@@ -333,7 +339,7 @@
     // --- CALENDAR LOGIC (Restored & Robust) ---
     function renderCalendar() {
         const container = document.getElementById('cal-days-container'); 
-        if(!container) return; // Safety check
+        if(!container) return; 
         container.innerHTML = "";
         
         const firstDay = new Date(currentYear, currentMonth, 1);
@@ -344,10 +350,8 @@
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         document.getElementById('cal-month-year').innerText = `${monthNames[currentMonth]} ${currentYear}`;
 
-        // Spacers for empty days
         for(let i=0; i<startDayIndex; i++) container.appendChild(document.createElement('div')); 
 
-        // Actual Days
         for(let d=1; d<=daysInMonth; d++) {
             const dayDiv = document.createElement('div'); 
             dayDiv.className = "cal-day"; 
@@ -355,7 +359,6 @@
             
             const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
             
-            // Red Dot Logic
             if(shiftsCache.some(s => s.date === dateStr)) {
                 dayDiv.classList.add('has-shift');
             }
@@ -387,160 +390,4 @@
             list.innerHTML += `
                 <div class="list-item" style="border-left-color: ${s.status === 'open' ? 'var(--theme-red)' : 'var(--theme-blue)'}">
                     <div><b>${s.empName}</b><br>${time12(s.start)} - ${time12(s.end)} <span class="role-badge">${s.role}</span></div>
-                    <div>${actionBtn} ${currentUser.role==='manager' ? `<button style="background:var(--theme-red); width:auto; padding:2px 5px;" onclick="del('shifts','${s.id}')">X</button>` : ''}</div>
-                </div>`;
-        });
-    }
-
-    function changeMonth(dir) { currentMonth += dir; renderCalendar(); }
-    
-    function renderCoverageNeeded() {
-        const list = document.getElementById('open-shifts-list'); list.innerHTML = "";
-        const openShifts = shiftsCache.filter(s => s.status === 'open' && s.empName !== currentUser.name);
-        if(openShifts.length === 0) list.innerHTML = "<small style='color:#777'>No coverage requests.</small>";
-        openShifts.forEach(s => {
-             list.innerHTML += `
-                <div class="list-item" style="border-left: 3px solid var(--theme-red);">
-                    <div><b>${s.date}</b><br>${s.empName} needs cover (${s.role})</div>
-                    <button class="btn-blue btn-small" onclick="takeShift('${s.id}')">Take</button>
-                </div>`;
-        });
-    }
-
-    async function requestCover(id) { if(confirm("Request Cover?")) await window.updateDoc(window.doc(window.db, "shifts", id), { status: 'open' }); }
-    async function takeShift(id) { if(confirm("Take Shift?")) await window.updateDoc(window.doc(window.db, "shifts", id), { status: 'assigned', empName: currentUser.name }); }
-
-    function handleClock() {
-        const btn = document.getElementById('clock-btn');
-        if(btn.innerText === "CLOCK IN") {
-            shiftStartTime = new Date();
-            document.getElementById('clock-status-text').innerText = "In at: " + shiftStartTime.toLocaleTimeString();
-            btn.innerText = "CLOCK OUT"; btn.className = "btn-red";
-            clockTimer = setInterval(() => { document.getElementById('clock-display').innerText = new Date(new Date() - shiftStartTime).toISOString().substr(11,8); }, 1000);
-        } else {
-            const end = new Date();
-            const hrs = Math.round(((end - shiftStartTime) / 3600000) * 4) / 4;
-            const note = prompt("Shift Notes?");
-            window.addDoc(window.collection(window.db, "timecards"), {
-                userId: currentUser.id, userName: currentUser.name,
-                date: shiftStartTime.toISOString().split('T')[0], 
-                start: shiftStartTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
-                end: end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
-                hours: hrs, note: note || "", approved: false
-            });
-            clearInterval(clockTimer); document.getElementById('clock-display').innerText = "00:00:00";
-            document.getElementById('clock-status-text').innerText = "Not clocked in";
-            btn.innerText = "CLOCK IN"; btn.className = "btn-blue";
-        }
-    }
-
-    function renderMyHistory() {
-        const list = document.getElementById('my-history-list'); list.innerHTML = "";
-        const myPunches = timePunches.filter(p => p.userId === currentUser.id);
-        const myUser = usersCache.find(u => u.id === currentUser.id);
-        const rate = myUser ? parseFloat(myUser.rate) : (parseFloat(currentUser.rate) || 0);
-        
-        myPunches.forEach(p => {
-             const pay = (p.hours * rate).toFixed(2);
-             list.innerHTML += `
-                <div class="list-item">
-                    <div><b>${p.date}</b> (${p.hours}h) <span style="color:var(--theme-green)">$${pay}</span><br><small>${p.start} - ${p.end}</small></div>
-                    <div style="font-size:0.8em; color:${p.approved ? '#2ecc71':'orange'}">${p.approved ? 'APPROVED' : 'PENDING'}</div>
-                </div>`;
-        });
-    }
-
-    // --- MANAGER ADMIN ---
-    function renderAdminTimeCard() { 
-        const uid = document.getElementById('mgr-time-user').value;
-        const view = document.getElementById('admin-timecard-view'); view.innerHTML = "";
-        if(!uid) return;
-        
-        const user = usersCache.find(u => u.id === uid);
-        const rate = user ? parseFloat(user.rate) : 0;
-        const punches = timePunches.filter(p => p.userId === uid);
-
-        punches.forEach(p => {
-            const pay = (p.hours * rate).toFixed(2);
-            
-            view.innerHTML += `
-                <div class="card" style="border:1px solid ${p.approved ? '#2ecc71':'#444'}">
-                    <div style="display:flex; justify-content:space-between;">
-                        <strong>${p.userName}</strong> <span style="color:#2ecc71">$${pay}</span>
-                    </div>
-                    
-                    <div class="edit-row">
-                        <input type="date" id="date-${p.id}" value="${p.date}">
-                    </div>
-                    <div class="edit-row">
-                        <input type="text" id="start-${p.id}" value="${p.start}" placeholder="Start">
-                        <input type="text" id="end-${p.id}" value="${p.end}" placeholder="End">
-                    </div>
-
-                    <div style="margin:5px 0; font-style:italic; color:#ccc;">"${p.note || ''}"</div>
-                    
-                    <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
-                        <button class="btn-blue btn-small" onclick="updateTimeCard('${p.id}')">Save Changes</button>
-                        ${!p.approved ? `<button class="btn-green btn-small" onclick="approveCard('${p.id}')">Approve</button>` : '<b>✓</b>'}
-                        <button class="btn-red btn-small" onclick="del('timecards', '${p.id}')">Delete</button>
-                    </div>
-                </div>`;
-        });
-    }
-
-    async function updateTimeCard(docId) {
-        const newDate = document.getElementById(`date-${docId}`).value;
-        const newStart = document.getElementById(`start-${docId}`).value;
-        const newEnd = document.getElementById(`end-${docId}`).value;
-        const newHours = prompt("Times changed. Enter new Total Hours (e.g., 8.5):");
-        
-        if(newHours) {
-            await window.updateDoc(window.doc(window.db, "timecards", docId), { 
-                date: newDate, 
-                start: newStart, 
-                end: newEnd, 
-                hours: parseFloat(newHours) 
-            });
-            alert("Updated");
-        }
-    }
-    
-    async function respondSupply(docId) {
-        const reply = document.getElementById(`resp-${docId}`).value;
-        if(reply) await window.updateDoc(window.doc(window.db, "supplies", docId), { response: reply });
-    }
-
-    async function approveCard(docId) { await window.updateDoc(window.doc(window.db, "timecards", docId), { approved: true }); }
-    async function addEmployee() {
-        const name = document.getElementById('new-emp-name').value;
-        const pin = document.getElementById('new-emp-pin').value;
-        const rate = document.getElementById('new-emp-rate').value;
-        if(name && pin) { await window.addDoc(window.collection(window.db, "users"), { name, pin, rate, role: 'staff' }); alert("Added"); }
-    }
-    async function editPay(id, name) {
-        const newRate = prompt(`New Rate for ${name}:`);
-        if(newRate) await window.updateDoc(window.doc(window.db, "users", id), { rate: newRate });
-    }
-    async function addShift() {
-        const name = document.getElementById('shift-emp-select').value;
-        const date = document.getElementById('shift-date').value;
-        const start = document.getElementById('shift-start').value;
-        const end = document.getElementById('shift-end').value;
-        const role = document.getElementById('shift-role').value;
-        if(name && date) { await window.addDoc(window.collection(window.db, "shifts"), { empName: name, date, start, end, role, status: 'assigned' }); alert("Published!"); }
-    }
-    async function addSupply() {
-        const i = document.getElementById('supply-item').value;
-        if(i) { await window.addDoc(window.collection(window.db, "supplies"), { item: i, date: new Date().toISOString() }); document.getElementById('supply-item').value=""; }
-    }
-    window.del = async function(col, id) { if(confirm("Delete?")) await window.deleteDoc(window.doc(window.db, col, id)); }
-    window.showTab = function(id) {
-        document.querySelectorAll('.tab-content').forEach(d => d.style.display = 'none');
-        document.getElementById('tab-'+id).style.display = 'block';
-        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active-tab'));
-        event.target.classList.add('active-tab');
-        if(id === 'schedule') renderCalendar();
-    }
-</script>
-</body>
-</html>
+                    <div>${actionBtn} ${currentUser.role==='manager' ? `<button style="background
