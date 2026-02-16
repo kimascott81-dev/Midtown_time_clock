@@ -27,7 +27,7 @@
         // MAKE SURE YOU DO NOT DELETE THE COMMAS OR QUOTES!
         // ======================================================
         const firebaseConfig = {
-             apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
+            apiKey: "AIzaSyCUHuCtnbjolkDrTyTjb9tIrb2N_tGhudA",
   authDomain: "midtown-time-clock.firebaseapp.com",
   projectId: "midtown-time-clock",
   storageBucket: "midtown-time-clock.firebasestorage.app",
@@ -236,4 +236,319 @@
 
     // --- AUTH ---
     window.login = async function() {
-        if (!window.db) { alert("Database not connected. Check API
+        if (!window.db) { alert("Database not connected. Check API Keys in code!"); return; }
+        
+        const pin = document.getElementById('pin-input').value;
+        try {
+            const q = window.query(window.collection(window.db, "users"), window.where("pin", "==", pin));
+            window.onSnapshot(q, (snapshot) => {
+                if (!snapshot.empty) {
+                    const doc = snapshot.docs[0];
+                    currentUser = { id: doc.id, ...doc.data() };
+                    enterDashboard();
+                } else { document.getElementById('login-msg').innerText = "Invalid PIN"; }
+            });
+        } catch (e) { alert("Login Error: " + e.message); }
+    }
+
+    window.createFirstManager = async function() {
+        const name = document.getElementById('setup-name').value;
+        const pin = document.getElementById('setup-pin').value;
+        if(name && pin) {
+            await window.addDoc(window.collection(window.db, "users"), { name, pin, rate: 0, role: 'manager' });
+            alert("Created! Login now.");
+        }
+    }
+
+    function enterDashboard() {
+        document.getElementById('login-screen').classList.remove('active');
+        document.getElementById('main-dashboard').classList.add('active');
+        document.getElementById('user-display').innerText = currentUser.name;
+        if(currentUser.role === 'manager') {
+            document.getElementById('mgr-tab-btn').style.display = 'block';
+            startManagerListeners();
+        }
+        startDataListeners();
+        renderCalendar();
+    }
+    window.logout = function() { location.reload(); }
+
+    function startDataListeners() {
+        window.onSnapshot(window.query(window.collection(window.db, "shifts"), window.orderBy("date")), (snap) => {
+            shiftsCache = [];
+            snap.forEach(doc => shiftsCache.push({ id: doc.id, ...doc.data() }));
+            renderCalendar(); renderCoverageNeeded();
+        });
+
+        window.onSnapshot(window.query(window.collection(window.db, "timecards"), window.orderBy("date", "desc")), (snap) => {
+            timePunches = [];
+            snap.forEach(doc => timePunches.push({ id: doc.id, ...doc.data() }));
+            renderMyHistory();
+            if(currentUser.role === 'manager') renderAdminTimeCard();
+        });
+
+        window.onSnapshot(window.collection(window.db, "supplies"), (snap) => {
+            const list = document.getElementById('live-supply-list');
+            list.innerHTML = "";
+            snap.forEach(doc => {
+                const s = doc.data();
+                let responseHtml = s.response ? `<div style="color:var(--theme-blue); font-size:0.9em; margin-top:5px;">Mgr: "${s.response}"</div>` : '';
+                let managerAction = "";
+                
+                if(currentUser.role === 'manager') {
+                    managerAction = `
+                    <div style="margin-top:5px; display:flex; gap:5px;">
+                        <input type="text" id="resp-${doc.id}" placeholder="Reply..." style="padding:5px; font-size:0.8em;">
+                        <button class="btn-blue btn-small" onclick="respondSupply('${doc.id}')">Reply</button>
+                        <button class="btn-red btn-small" onclick="del('supplies','${doc.id}')">X</button>
+                    </div>`;
+                }
+
+                list.innerHTML += `
+                <div class="list-item" style="flex-direction:column; align-items:flex-start;">
+                    <div style="width:100%; display:flex; justify-content:space-between;">
+                        <span>${s.item}</span>
+                        <small style="color:#888">${s.date ? s.date.substring(5) : ''}</small>
+                    </div>
+                    ${responseHtml}
+                    ${managerAction}
+                </div>`;
+            });
+        });
+    }
+
+    function startManagerListeners() {
+        window.onSnapshot(window.collection(window.db, "users"), (snap) => {
+            const list = document.getElementById('staff-list');
+            const select = document.getElementById('shift-emp-select');
+            const timeSelect = document.getElementById('mgr-time-user');
+            
+            list.innerHTML = ""; select.innerHTML = ""; timeSelect.innerHTML = "<option value=''>Select Employee...</option>";
+            usersCache = []; 
+            
+            snap.forEach(doc => {
+                const u = doc.data();
+                usersCache.push({ id: doc.id, ...u }); 
+                
+                list.innerHTML += `
+                    <div class="list-item">
+                        <div><b>${u.name}</b> (PIN:${u.pin})<br>$${u.rate}/hr</div>
+                        <button class="btn-blue btn-small" onclick="editPay('${doc.id}', '${u.name}')">Edit Pay</button>
+                    </div>`;
+                select.innerHTML += `<option value="${u.name}">${u.name}</option>`;
+                timeSelect.innerHTML += `<option value="${doc.id}">${u.name}</option>`;
+            });
+        });
+    }
+
+    // --- CALENDAR LOGIC ---
+    function renderCalendar() {
+        const container = document.getElementById('cal-days-container'); 
+        if(!container) return; 
+        container.innerHTML = "";
+        
+        const firstDay = new Date(currentYear, currentMonth, 1);
+        const lastDay = new Date(currentYear, currentMonth + 1, 0);
+        const daysInMonth = lastDay.getDate();
+        const startDayIndex = firstDay.getDay();
+
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        document.getElementById('cal-month-year').innerText = `${monthNames[currentMonth]} ${currentYear}`;
+
+        for(let i=0; i<startDayIndex; i++) container.appendChild(document.createElement('div')); 
+
+        for(let d=1; d<=daysInMonth; d++) {
+            const dayDiv = document.createElement('div'); 
+            dayDiv.className = "cal-day"; 
+            dayDiv.innerText = d;
+            
+            const dateStr = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+            
+            if(shiftsCache.some(s => s.date === dateStr)) {
+                dayDiv.classList.add('has-shift');
+            }
+            
+            dayDiv.onclick = () => selectDate(dateStr, dayDiv);
+            if(dateStr === selectedDate) dayDiv.classList.add('selected');
+            container.appendChild(dayDiv);
+        }
+        selectDate(selectedDate, null);
+    }
+
+    function selectDate(dateStr, element) {
+        selectedDate = dateStr;
+        if(element) { document.querySelectorAll('.cal-day').forEach(d => d.classList.remove('selected')); element.classList.add('selected'); }
+        document.getElementById('selected-date-display').innerText = "Schedule: " + dateStr;
+        
+        const list = document.getElementById('day-shifts-list'); list.innerHTML = "";
+        const dayShifts = shiftsCache.filter(s => s.date === dateStr);
+        if(dayShifts.length === 0) list.innerHTML = "<p style='color:#888; text-align:center;'>No shifts.</p>";
+        
+        dayShifts.forEach(s => {
+            const time12 = (t) => { if(!t) return ""; let [h, m] = t.split(':'); let ampm = h >= 12 ? 'PM' : 'AM'; h = h % 12; h = h ? h : 12; return `${h}:${m} ${ampm}`; };
+            
+            let actionBtn = "";
+            if(s.empName === currentUser.name && s.status !== 'open') actionBtn = `<button class="btn-red btn-small" onclick="requestCover('${s.id}')">Request Cover</button>`;
+            else if (s.status === 'open' && s.empName !== currentUser.name) actionBtn = `<button class="btn-blue btn-small" onclick="takeShift('${s.id}')">Take Shift</button>`;
+            else if (s.status === 'open') actionBtn = `<small style="color:var(--theme-red)">Cover Requested</small>`;
+
+            list.innerHTML += `
+                <div class="list-item" style="border-left-color: ${s.status === 'open' ? 'var(--theme-red)' : 'var(--theme-blue)'}">
+                    <div><b>${s.empName}</b><br>${time12(s.start)} - ${time12(s.end)} <span class="role-badge">${s.role}</span></div>
+                    <div>${actionBtn} ${currentUser.role==='manager' ? `<button style="background:var(--theme-red); width:auto; padding:2px 5px;" onclick="del('shifts','${s.id}')">X</button>` : ''}</div>
+                </div>`;
+        });
+    }
+
+    window.changeMonth = function(dir) { currentMonth += dir; renderCalendar(); }
+    
+    function renderCoverageNeeded() {
+        const list = document.getElementById('open-shifts-list'); list.innerHTML = "";
+        const openShifts = shiftsCache.filter(s => s.status === 'open' && s.empName !== currentUser.name);
+        if(openShifts.length === 0) list.innerHTML = "<small style='color:#777'>No coverage requests.</small>";
+        openShifts.forEach(s => {
+             list.innerHTML += `
+                <div class="list-item" style="border-left: 3px solid var(--theme-red);">
+                    <div><b>${s.date}</b><br>${s.empName} needs cover (${s.role})</div>
+                    <button class="btn-blue btn-small" onclick="takeShift('${s.id}')">Take</button>
+                </div>`;
+        });
+    }
+
+    window.requestCover = async function(id) { if(confirm("Request Cover?")) await window.updateDoc(window.doc(window.db, "shifts", id), { status: 'open' }); }
+    window.takeShift = async function(id) { if(confirm("Take Shift?")) await window.updateDoc(window.doc(window.db, "shifts", id), { status: 'assigned', empName: currentUser.name }); }
+
+    window.handleClock = function() {
+        const btn = document.getElementById('clock-btn');
+        if(btn.innerText === "CLOCK IN") {
+            shiftStartTime = new Date();
+            document.getElementById('clock-status-text').innerText = "In at: " + shiftStartTime.toLocaleTimeString();
+            btn.innerText = "CLOCK OUT"; btn.className = "btn-red";
+            clockTimer = setInterval(() => { document.getElementById('clock-display').innerText = new Date(new Date() - shiftStartTime).toISOString().substr(11,8); }, 1000);
+        } else {
+            const end = new Date();
+            const hrs = Math.round(((end - shiftStartTime) / 3600000) * 4) / 4;
+            const note = prompt("Shift Notes?");
+            window.addDoc(window.collection(window.db, "timecards"), {
+                userId: currentUser.id, userName: currentUser.name,
+                date: shiftStartTime.toISOString().split('T')[0], 
+                start: shiftStartTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}), 
+                end: end.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+                hours: hrs, note: note || "", approved: false
+            });
+            clearInterval(clockTimer); document.getElementById('clock-display').innerText = "00:00:00";
+            document.getElementById('clock-status-text').innerText = "Not clocked in";
+            btn.innerText = "CLOCK IN"; btn.className = "btn-blue";
+        }
+    }
+
+    function renderMyHistory() {
+        const list = document.getElementById('my-history-list'); list.innerHTML = "";
+        const myPunches = timePunches.filter(p => p.userId === currentUser.id);
+        const myUser = usersCache.find(u => u.id === currentUser.id);
+        const rate = myUser ? parseFloat(myUser.rate) : (parseFloat(currentUser.rate) || 0);
+        
+        myPunches.forEach(p => {
+             const pay = (p.hours * rate).toFixed(2);
+             list.innerHTML += `
+                <div class="list-item">
+                    <div><b>${p.date}</b> (${p.hours}h) <span style="color:var(--theme-green)">$${pay}</span><br><small>${p.start} - ${p.end}</small></div>
+                    <div style="font-size:0.8em; color:${p.approved ? '#2ecc71':'orange'}">${p.approved ? 'APPROVED' : 'PENDING'}</div>
+                </div>`;
+        });
+    }
+
+    window.renderAdminTimeCard = function() { 
+        const uid = document.getElementById('mgr-time-user').value;
+        const view = document.getElementById('admin-timecard-view'); view.innerHTML = "";
+        if(!uid) return;
+        
+        const user = usersCache.find(u => u.id === uid);
+        const rate = user ? parseFloat(user.rate) : 0;
+        const punches = timePunches.filter(p => p.userId === uid);
+
+        punches.forEach(p => {
+            const pay = (p.hours * rate).toFixed(2);
+            
+            view.innerHTML += `
+                <div class="card" style="border:1px solid ${p.approved ? '#2ecc71':'#444'}">
+                    <div style="display:flex; justify-content:space-between;">
+                        <strong>${p.userName}</strong> <span style="color:#2ecc71">$${pay}</span>
+                    </div>
+                    
+                    <div class="edit-row">
+                        <input type="date" id="date-${p.id}" value="${p.date}">
+                    </div>
+                    <div class="edit-row">
+                        <input type="text" id="start-${p.id}" value="${p.start}" placeholder="Start">
+                        <input type="text" id="end-${p.id}" value="${p.end}" placeholder="End">
+                    </div>
+
+                    <div style="margin:5px 0; font-style:italic; color:#ccc;">"${p.note || ''}"</div>
+                    
+                    <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
+                        <button class="btn-blue btn-small" onclick="updateTimeCard('${p.id}')">Save Changes</button>
+                        ${!p.approved ? `<button class="btn-green btn-small" onclick="approveCard('${p.id}')">Approve</button>` : '<b>✓</b>'}
+                        <button class="btn-red btn-small" onclick="del('timecards', '${p.id}')">Delete</button>
+                    </div>
+                </div>`;
+        });
+    }
+
+    window.updateTimeCard = async function(docId) {
+        const newDate = document.getElementById(`date-${docId}`).value;
+        const newStart = document.getElementById(`start-${docId}`).value;
+        const newEnd = document.getElementById(`end-${docId}`).value;
+        const newHours = prompt("Times changed. Enter new Total Hours (e.g., 8.5):");
+        
+        if(newHours) {
+            await window.updateDoc(window.doc(window.db, "timecards", docId), { 
+                date: newDate, 
+                start: newStart, 
+                end: newEnd, 
+                hours: parseFloat(newHours) 
+            });
+            alert("Updated");
+        }
+    }
+    
+    window.respondSupply = async function(docId) {
+        const reply = document.getElementById(`resp-${docId}`).value;
+        if(reply) await window.updateDoc(window.doc(window.db, "supplies", docId), { response: reply });
+    }
+
+    window.approveCard = async function(docId) { await window.updateDoc(window.doc(window.db, "timecards", docId), { approved: true }); }
+    window.addEmployee = async function() {
+        const name = document.getElementById('new-emp-name').value;
+        const pin = document.getElementById('new-emp-pin').value;
+        const rate = document.getElementById('new-emp-rate').value;
+        if(name && pin) { await window.addDoc(window.collection(window.db, "users"), { name, pin, rate, role: 'staff' }); alert("Added"); }
+    }
+    window.editPay = async function(id, name) {
+        const newRate = prompt(`New Rate for ${name}:`);
+        if(newRate) await window.updateDoc(window.doc(window.db, "users", id), { rate: newRate });
+    }
+    window.addShift = async function() {
+        const name = document.getElementById('shift-emp-select').value;
+        const date = document.getElementById('shift-date').value;
+        const start = document.getElementById('shift-start').value;
+        const end = document.getElementById('shift-end').value;
+        const role = document.getElementById('shift-role').value;
+        if(name && date) { await window.addDoc(window.collection(window.db, "shifts"), { empName: name, date, start, end, role, status: 'assigned' }); alert("Published!"); }
+    }
+    window.addSupply = async function() {
+        const i = document.getElementById('supply-item').value;
+        if(i) { await window.addDoc(window.collection(window.db, "supplies"), { item: i, date: new Date().toISOString() }); document.getElementById('supply-item').value=""; }
+    }
+    window.del = async function(col, id) { if(confirm("Delete?")) await window.deleteDoc(window.doc(window.db, col, id)); }
+    
+    window.showTab = function(id) {
+        document.querySelectorAll('.tab-content').forEach(d => d.style.display = 'none');
+        document.getElementById('tab-'+id).style.display = 'block';
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active-tab'));
+        event.target.classList.add('active-tab');
+        if(id === 'schedule') renderCalendar();
+    }
+</script>
+</body>
+</html>
